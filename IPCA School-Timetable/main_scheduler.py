@@ -19,8 +19,10 @@ class DBGenerator:
     self._teachers = self.select_teachers()
     self._subjects = self.select_subjects()
     self._scheduleTimes = self.select_scheduleTimes()
+    self._courses = self.select_courses()
+    self._teacherRestrictionsTimes = self.select_teacherRestTimes()
     self._nbrClass = 0
-    self._nbrClass = len(self._subjects)
+    self._nbrClass = len(self._subjects)*2
     
   #Metodos para importar dados da BD
   def select_rooms(self):
@@ -53,6 +55,22 @@ class DBGenerator:
     for i in range(0, len(times)):
       timesList.append(ClassTime(times[i][0], times[i][1], times[i][2]))
     return timesList
+  
+  def select_courses(self):
+    self._cursor.execute("select * from courses")
+    courses = self._cursor.fetchall()
+    coursesList = []
+    for c in range(0, len(courses)):
+      coursesList.append(Courses(courses[c][0], courses[c][1], courses[c][2]))
+    return coursesList
+  
+  def select_teacherRestTimes(self):
+    self._cursor.execute("select * from teacher_restrictionTimes")
+    teacherRest = self._cursor.fetchall()
+    teacherRestList = []
+    for r in range(0, len(teacherRest)):
+      teacherRestList.append(Teacher_RestrictionsTime(teacherRest[r][0], teacherRest[r][1]))
+    
   
   def select_classTeacher(self, subjectID):
     self._cursor.execute("select * from class where subject_id == '" + subjectID + "'")
@@ -119,6 +137,25 @@ class ClassTime:
   def get_block(self): return self._block
   def get_hour(self): return self._hour
   def get_prev_Block(self): return self._prev_Block
+  
+#Classe cursos para instanciação
+class Courses:
+  def __init__(self, id, name, abrev): 
+    self._id = id
+    self._name = name
+    self._abrev = abrev
+  #Metodos para cada atributo
+  def get_id(self): return self._id
+  def get_name(self): return self._name
+  def get_abrev(self): return self._abrev
+  
+class Teacher_RestrictionsTime:
+  def __init__(self, id_teacher, block):
+    self._id_teacher = id_teacher
+    self._block = block
+  #Metodos para cada atributo  
+  def get_self_id_teacher(self): return self._id_teacher
+  def get_block(self): return self._block
   
 #Classe bloco de aula para instanciação
 class ClassBlock:
