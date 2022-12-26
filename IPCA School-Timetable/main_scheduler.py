@@ -3,24 +3,25 @@ from enum import Enum
 import sqlite3
 from tabulate import tabulate
 import random
+import re
 rnd = random.randrange
 
-POP_SIZE = 15
-ELITE_NBR = 2
-MUTATION_RATE = 0.1
-TOURNAMENT_SIZE = 3
+POP_SIZE =12   #Nº de horários a considerar em cada população quanto > menor o desempenho
+ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
+MUTATION_RATE = 0.15   #Taxa de mutação a considerar
+TOURNAMENT_SIZE = 5   #nº de horários a considerar para cada torneio
 
 #Classe para importar dados da DB
 class DBGenerator:
   def __init__(self):
     self._connector = sqlite3.connect('data.db')
     self._cursor = self._connector.cursor()
+    self._teacherRestrictionsTimes = self.select_teacherRestTimes()
     self._rooms = self.select_rooms()
     self._teachers = self.select_teachers()
     self._subjects = self.select_subjects()
     self._scheduleTimes = self.select_scheduleTimes()
     self._courses = self.select_courses()
-    self._teacherRestrictionsTimes = self.select_teacherRestTimes()
     self._nbrClass = 0
     self._nbrClass = len(self._subjects)*2
     
@@ -37,7 +38,7 @@ class DBGenerator:
     teachers = self._cursor.fetchall()
     teachersList = []
     for i in range(0, len(teachers)):
-      teachersList.append(Teacher(teachers[i][0], teachers[i][1], teachers[i][2]), self.select_teacherRestTimes(teachers[i]))
+      teachersList.append(Teacher(teachers[i][0], teachers[i][1], teachers[i][2]))
     return teachersList
     
   def select_subjects(self):
@@ -45,7 +46,7 @@ class DBGenerator:
     subjects = self._cursor.fetchall()
     subjectsList = []
     for i in range(0, len(subjects)):
-      subjectsList.append(Subject(subjects[i][0], subjects[i][1], self.select_classTeacher(subjects[i][0]), subjects[i][2]))
+      subjectsList.append(Subject(subjects[i][0], subjects[i][1], subjects[i][2], self.select_classTeacher(subjects[i][0]), subjects[i][3]))
     return subjectsList
 
   def select_scheduleTimes(self):  
@@ -64,17 +65,16 @@ class DBGenerator:
       coursesList.append(Course(courses[c][0], courses[c][1], courses[c][2]))
     return coursesList
   
-  def select_teacherRestTimes(self, teacher):
+  def select_teacherRestTimes(self):
     self._cursor.execute("select * from teacher_restrictionTimes")
     teacherRest = self._cursor.fetchall()
     teacherRestList = []
     for r in range(0, len(teacherRest)):
-      if (teacherRest[r][0] == teacher.get_id()):
-        teacherRestList.append(Teacher_RestrictionsTime(teacherRest[r][1]))
+      teacherRestList.append(Teacher_RestrictionsTime(teacherRest[r][0], teacherRest[r][1]))
     return teacherRestList
   
   def select_classTeacher(self, subjectID):
-    self._cursor.execute("select * from class_Teacher where subject_id == '" + subjectID + "'")
+    self._cursor.execute("select * from class_Teachers where subject_id == '" + subjectID + "'")
     subjectTeachers = self._cursor.fetchall()
     teachersId = []
     #Para cada professor que leciona a disciplina vamos guardar o seu id
@@ -85,7 +85,17 @@ class DBGenerator:
     for i in range(0, len(self._teachers)):
       if self._teachers[i].get_id() in teachersId:
         teachersList.append(self._teachers[i])
-    return teachersList[0]
+    return teachersList
+  
+  #Devolver todas as restrições horárias de um professor
+  def set_teacher_Time_Restrictions(self):
+    timeRestrictions = self.get_teacherRestrictions()
+    teachers = self.get_teachers()
+    teacherRestrictions = list()
+    for t in range(0, len(teachers)):
+      for r in range(0, len(timeRestrictions)):
+        if(timeRestrictions[r].get_id_teacher() == teachers[t].get_id()):
+          teachers[t].get_restrictions().append(timeRestrictions[t])
   
   def get_rooms(self): return self._rooms
   def get_teachers(self): return self._teachers
@@ -97,17 +107,19 @@ class DBGenerator:
 
 #Classe aula agendada para instanciação
 class Subject:
-  def __init__(self, id, name, teacher, course):
+  def __init__(self, id, name, abrev, teacher, course):
       self._id = id
       self._name = name
       self._teacher = teacher
       self._course = course
+      self._abrev = abrev
       self._assigned = 0
   #Metodos para cada atributo
   def get_id(self): return self._id
   def get_name(self): return self._name
   def get_teacher(self): return self._teacher
   def get_course(self): return self._course
+  def get_abrev(self): return self._abrev
   def get_assigned(self): return self._assigned
   def set_assigned(self):
     if (self._assigned < 4): self._assigned += 2
@@ -115,12 +127,12 @@ class Subject:
 
 #Classe professor para instanciação
 class Teacher:
-  def __init__(self, id, name, abrev, restrictions):
+  def __init__(self, id, name, abrev):
     self._id = id
     self._name = name
     self._abrev = abrev
-    self._restrictions = restrictions
-
+    self._restrictions = []
+    
   #Metodos para cada atributo
   def get_id(self): return self._id
   def get_name(self): return self._name
@@ -162,6 +174,7 @@ class Course:
   def get_abrev(self): return self._abrev
   def __str__(self): return self._name
   
+#Classe restrições horárias para instanciação
 class Teacher_RestrictionsTime:
   def __init__(self, id_teacher, block):
     self._id_teacher = id_teacher
@@ -178,14 +191,12 @@ class ClassBlock:
     self._teacher = None
     self._classTime = None
     self._room = None
-    self._course = course
   #Metodos para cada atributo
   def get_id(self): return self._id
-  def get_scheduledClass(self): return self._subject
+  def get_subject(self): return self._subject
   def get_teacher(self): return self._teacher
   def get_classTime(self): return self._classTime
   def get_room(self): return self._room
-  def get_course(self): return self._course
   def set_teacher(self, teacher): self._teacher = teacher
   def set_classTime(self, classTime): self._classTime = classTime
   def set_room(self, room): self._room = room
@@ -219,6 +230,7 @@ class Schedule:
     self._fitness = -1
     self._classNbr = 0
     self._fitnessChanged = True
+    
   def get_classes(self):
     self._fitnessChanged = True
     return self._classes
@@ -232,15 +244,24 @@ class Schedule:
   def initClasses(self):
     subjects = dataMng.get_subjects()
     for s in range(0, len(subjects)):
-      newClass = ClassBlock(self._classNbr, subjects[s], subjects[s].get_course())
-      self._classNbr -= 2
-      #Atribuir bloco horário aleatório a partir do conjunto de blocos disponíveis
-      newClass.set_classTime(dataMng.get_scheduleTimes()[rnd(0, len(dataMng.get_scheduleTimes()))])
-      #Atribuir sala aleatória a partir do conjunto de salas disponíveis
-      newClass.set_room(dataMng.get_rooms()[rnd(0, len(dataMng.get_rooms()))])
-      #Atribuir professor aleatório a partir do conjunto de professores disponíveis para a disciplina
-      newClass.set_teacher(subjects[s].get_teacher()[rnd(0, len(subjects[s].get_teacher()))])
-      self._classes.append(newClass)
+      idTeacher = 0
+      assigned = 0
+      while (assigned != 4):
+        newClass = ClassBlock(self._classNbr, subjects[s], subjects[s].get_course())
+        subjects[s].set_assigned()
+        self._classNbr += 1
+        #Atribuir bloco horário aleatório a partir do conjunto de blocos disponíveis
+        newClass.set_classTime(dataMng.get_scheduleTimes()[rnd(0, len(dataMng.get_scheduleTimes()))])
+        #Atribuir sala aleatória a partir do conjunto de salas disponíveis
+        newClass.set_room(dataMng.get_rooms()[rnd(0, len(dataMng.get_rooms()))])
+        if (idTeacher == 0):
+          #Atribuir professor aleatório a partir do conjunto de professores disponíveis para a disciplina
+          newClass.set_teacher(subjects[s].get_teacher()[rnd(0, len(subjects[s].get_teacher()))])
+          idTeacher = newClass.get_teacher()
+        else:
+          newClass.set_teacher(idTeacher)
+        self._classes.append(newClass)
+        assigned +=2
     return self
   
   #Devolver todas os blocos de aulas associados a um professor
@@ -251,15 +272,23 @@ class Schedule:
       if(self._classes[s].get_teacher().get_id() == teacher.get_id()):
         classTimes.append(self._classes[s].get_classTime().get_block())
     return classTimes
+    
+   #Devolver todas os blocos de aulas associados a um curso
+  def get_Course_classTimes(self, course):
+    classTimes = list()
+    for s in range(0, len(self._classes)):
+      #Procurar em blocos horários os que estão associados ao ID do professor
+      if(self._classes[s].get_subject().get_course() == course.get_id()):
+        classTimes.append(self._classes[s].get_classTime().get_block())
+    return classTimes
   
-  #Devolver todas as restrições horárias de um professor
-  def get_teacher_Time_Restrictions(self, teacher):
-    timeRestrictions = dataMng.get_teacherRestrictions()
-    teacherRestrictions = list()
-    for t in range(0, len(timeRestrictions)):
-      if(timeRestrictions[t].get_id_teacher() == teacher.get_id()):
-        teacherRestrictions.append(timeRestrictions[t])
-      return teacherRestrictions
+  
+  def verify_Course_FreeDay(self, courseClasses):
+    aux = courseClasses
+    #aux.sort
+    aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])
+    if(len(aux) != 0):
+     print(aux)
     
   #####################################################################
   #Calcular função Fitness
@@ -267,7 +296,8 @@ class Schedule:
     self._restrictions = []
     classes = self.get_classes()
     teachers = dataMng.get_teachers()
-    #--------------------------------------- RESTRIÇÕES ------------------------------------
+    courses = dataMng.get_courses()
+    #--------------------------------------- TESTES DE RESTRIÇÕES ------------------------------------#
     for c in range(0, len(classes)):
       #Testar se tem aulas consecutivas
       if (classes[c].get_classTime().get_block() in classes[c].get_teacher().get_restrictions()): 
@@ -290,12 +320,29 @@ class Schedule:
               teacherAssignedRestr.append(classes[c])
               teacherAssignedRestr.append(classes[j])
               self._restrictions.append(Restriction(Restriction.RestrictionType.TEACHER_ASSIGNED, teacherAssignedRestr))
+        #Testar se mesma disciplina está a ser lecionada por professores diferentes
+        if(classes[c].get_subject() == classes[j].get_subject() and classes[c].get_teacher() != classes[j].get_teacher()):
+          teacherAlternate = list()
+          teacherAlternate.append(classes[c])
+          teacherAlternate.append(classes[j])
+          self._restrictions.append(Restriction(Restriction.RestrictionType.SUBJECT_TEACHERS_OVERLAP, teacherAlternate))
+          
       #Testar se não foram atribuidos os 2 blocos da disciplina
-      if (classes[c].get_assigned() != 4): 
+      if (classes[c].get_subject().get_assigned() != 4): 
         classAssigned = list()
         classAssigned.append(classes[c])
         self._restrictions.append(Restriction(Restriction.RestrictionType.SUBJECT_QUANTITY, classAssigned))
-    
+      #Testar se o curso tem algum dia livre
+      for c in range(0,len(courses)):
+        aux = self.get_Course_classTimes(courses[c])
+        if (self.verify_Course_FreeDay(aux) == False ):
+          CourseFreeDay = list()
+          CourseFreeDay.append(courses[c])
+          self._restrictions.append(Restriction(Restriction.RestrictionType.COURSE_FREE_DAY, CourseFreeDay))
+
+        
+      
+      
     #Quanto mais restrições violadas menor a função fitness (aprox de 0), o ideal é serem 0 para devolver 1
     return 1 / (1.0 * len(self._restrictions) + 1)
   #Retornar todas as aulas atribuidas deste horário
@@ -370,7 +417,7 @@ class GeneticAlg:
 #Metodo para encontrar a melhor solução entre a população    
 def choose_fittestSolution():
   generationQty = 0
-  print("\n===== Generation " + str(generationQty) + " =====")
+  print("\n===== GENERATION " + str(generationQty) + " =====")
   population = Population(POP_SIZE)
   #Ordenar população por horários com menor fitness -> crescente
   population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
@@ -381,9 +428,9 @@ def choose_fittestSolution():
   OutManager.display_Restrictions(population.get_schedules()[0])
   geneticAlg = GeneticAlg()
   
-  while population.get_schedules()[0].get_fitness() != 1.0:
+  while (population.get_schedules()[0].get_fitness() != 1.0):
     generationQty += 1
-    print("\n----- GENERATION " + str(generationQty) + " -----")
+    print("\n===== GENERATION " + str(generationQty) + " =====")
     population = geneticAlg.evolve(population)
     population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
     OutManager.display_Gen(population)
@@ -423,7 +470,7 @@ class OutManager:
     subjects = dataMng.get_subjects()
     rows = []
     for i in range(0, len(subjects)):
-      rows.append((subjects[i].get_id(), subjects[i].get_name(), subjects[i].get_teacher()))
+      rows.append((subjects[i].get_id(), subjects[i].get_name(), ([str(item.get_name()) for item in subjects[i].get_teacher()])))
     print("========== SUBJECTS ==========\n")
     print(tabulate(rows, headers=["ID", "Subject", "Teacher"]))
     print("\n======================================\n")
@@ -468,8 +515,8 @@ class OutManager:
     rows = []
     for t in range(0, len(teachers)):
       for r in range(0, len(restrictions)):
-        if(restrictions[r].get_id_teacher() == teachers[t].get_id()):
-          rows.append((teachers[t].get_name(),str(restrictions[r].get_block())))
+        if(restrictions[r].get_block() == teachers[t].get_id()):
+          rows.append((teachers[t].get_name(),str(restrictions[r].get_id())))
 
     print("========== TEACHERS TIME RESTRICTIONS ==========\n")
     print(tabulate(rows, headers=("NAME", "BLOCK")))
@@ -529,7 +576,7 @@ class OutManager:
     classes = schedule.get_classes()
     rows = []
     for c in range(0, len(classes)):
-      rows.append((str(c +1), classes[c].get_scheduledClass().get_id() + " (" + classes[c].get_scheduledClass().get_name() + 
+      rows.append((str(c +1), classes[c].get_subject().get_id() + " (" + classes[c].get_subject().get_name() + 
                   " )", classes[c].get_room().get_abrev(),
                   classes[c].get_teacher().get_id() + " (" + str(classes[c].get_teacher().get_abrev()) + ")",
                   str(classes[c].get_classTime().get_block()) + " (" + classes[c].get_classTime().get_hour() + ")"))
@@ -546,10 +593,13 @@ class OutManager:
                   str(" and ".join(map(str, restrictions[r].get_restrictionBetweenClass())))))
     if (len(restrictions) > 0): 
       print("\n========== Restrictions Table ==========\n")
+      print("Restrições Violadas:")
+      print(len(rows))
       print(tabulate(rows, headers=("Restriction_Type", "Between Class_blocks")))
     
     
 dataMng = DBGenerator()
+dataMng.set_teacher_Time_Restrictions()
 OutManager.display_data_input()   
 schedule = choose_fittestSolution()
 print("\nTeacher Perspective\n")
