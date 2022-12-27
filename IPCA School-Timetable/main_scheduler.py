@@ -6,10 +6,11 @@ import random
 import re
 rnd = random.randrange
 
-POP_SIZE =12   #Nº de horários a considerar em cada população quanto > menor o desempenho
+POP_SIZE =20   #Nº de horários a considerar em cada população quanto > menor o desempenho
 ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
-MUTATION_RATE = 0.15   #Taxa de mutação a considerar
+MUTATION_RATE = 0.1   #Taxa de mutação a considerar
 TOURNAMENT_SIZE = 5   #nº de horários a considerar para cada torneio
+MAX_GENERATIONS = 1500
 
 #Classe para importar dados da DB
 class DBGenerator:
@@ -207,13 +208,14 @@ class ClassBlock:
 #Classe para restrições possíveis de instanciar
 class Restriction:
   class RestrictionType(Enum):
-    TEACHER_ASSIGNED = 1
-    ROOM_OCCUPIED = 2
-    TEACHER_RESTRICTION_TIME = 3
-    SUBJECT_TEACHERS_OVERLAP = 4
-    COURSE_FREE_DAY = 5
-    TEACHER_FREE_DAY = 6
-    SUBJECT_QUANTITY = 7
+    TEACHER_ASSIGNED = 1    #Professor com sobreposição de aulas
+    ROOM_OCCUPIED = 2       #Sala com sobreposição de aulas
+    TEACHER_RESTRICTION_TIME = 3  #Restrição de horário do professor violada
+    SUBJECT_TEACHERS_OVERLAP = 4  #Disciplina de um curso lecionada por mais de 1 professor
+    COURSE_FREE_DAY = 5     #Curso sem nenhum dia livre
+    TEACHER_FREE_DAY = 6    #Professor sem nenhum dia livre
+    SUBJECT_QUANTITY = 7    #Disciplina sem as 4h semanais atribuidas
+    DAY_OVERLOAD = 8    #Dia com mais de 3 blocos horários atribuídos
     #tipo de restrição e entre que aulas existe essa restrição
   def __init__(self, restrictionType, restrictionBetweenClass): 
     self._restrictionType = restrictionType
@@ -282,13 +284,38 @@ class Schedule:
         classTimes.append(self._classes[s].get_classTime().get_block())
     return classTimes
   
-  
+  #Procurar se o curso tem algum dia livre
   def verify_Course_FreeDay(self, courseClasses):
+    #aux = ['BL02', 'BL05', 'BL11', 'BL13','BL14', 'BL16', 'BL22', 'BL23', 'BL24', 'BL25']
     aux = courseClasses
-    #aux.sort
+    periods = dataMng.get_scheduleTimes()
     aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])
-    if(len(aux) != 0):
-     print(aux)
+    for c in range(0, len(aux)):
+      i = 0
+      while (i < len(periods)):
+        #result = aux[c] != periods[i].get_block()
+        #result2 = aux[c] > periods[i+4].get_block()
+        if (aux[c] != periods[i].get_block() and aux[c] > periods[i+4].get_block()):
+          return True
+          #print("VIVA")
+        i +=5
+      return False
+  
+  #Verificar se cada curso apenas tem um máximo de 3 blocos diários    
+  def verify_Hours_Day(sel, courseClasses):
+    aux = courseClasses
+    periods = dataMng.get_scheduleTimes()
+    aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])
+    blockRestrictions = list()
+    for c in range(0, len(aux)):
+      blocks = 0
+      for p in range(0, len(periods)):
+        if(periods[p].get_block() == aux[c]):
+          if (periods[p].get_prev_Block() != ""):
+            blocks += 1
+      if (blocks > 3):
+        blockRestrictions.append(Restriction(Restriction.RestrictionType.DAY_OVERLOAD, aux[c]))    
+    return blockRestrictions         
     
   #####################################################################
   #Calcular função Fitness
@@ -332,17 +359,18 @@ class Schedule:
         classAssigned = list()
         classAssigned.append(classes[c])
         self._restrictions.append(Restriction(Restriction.RestrictionType.SUBJECT_QUANTITY, classAssigned))
-      #Testar se o curso tem algum dia livre
-      for c in range(0,len(courses)):
-        aux = self.get_Course_classTimes(courses[c])
-        if (self.verify_Course_FreeDay(aux) == False ):
-          CourseFreeDay = list()
-          CourseFreeDay.append(courses[c])
-          self._restrictions.append(Restriction(Restriction.RestrictionType.COURSE_FREE_DAY, CourseFreeDay))
-
+    #Testar se o curso tem algum dia livre
+    for c in range(0,len(courses)):
+      aux = self.get_Course_classTimes(courses[c])
+      if (self.verify_Course_FreeDay(aux) == False ):
+        CourseFreeDay = list()
+        CourseFreeDay.append(courses[c].get_abrev())
+        self._restrictions.append(Restriction(Restriction.RestrictionType.COURSE_FREE_DAY, CourseFreeDay))
+        restrictions = self.verify_Hours_Day(aux)
+        if (len(restrictions) > 0):
+          for r in range(0, len(restrictions)):
+            self._restrictions.append(restrictions[r])
         
-      
-      
     #Quanto mais restrições violadas menor a função fitness (aprox de 0), o ideal é serem 0 para devolver 1
     return 1 / (1.0 * len(self._restrictions) + 1)
   #Retornar todas as aulas atribuidas deste horário
@@ -429,15 +457,21 @@ def choose_fittestSolution():
   geneticAlg = GeneticAlg()
   
   while (population.get_schedules()[0].get_fitness() != 1.0):
-    generationQty += 1
-    print("\n===== GENERATION " + str(generationQty) + " =====")
-    population = geneticAlg.evolve(population)
-    population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
-    OutManager.display_Gen(population)
-    OutManager.display_ScheduleTable(population.get_schedules()[0])
-    OutManager.display_Restrictions(population.get_schedules()[0])
-  print("\n\n Best Solution found after " + str(generationQty) + " Generations\n")
-    
+    if(generationQty < MAX_GENERATIONS):
+      generationQty += 1
+      print("\n===== GENERATION " + str(generationQty) + " =====")
+      population = geneticAlg.evolve(population)
+      population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
+      OutManager.display_Gen(population)
+      OutManager.display_ScheduleTable(population.get_schedules()[0])
+      OutManager.display_Restrictions(population.get_schedules()[0])
+ 
+    else: 
+      print("\n\n Best Solution found after " + str(generationQty) + " Generations\n")
+      OutManager.display_Gen(population)
+      OutManager.display_ScheduleTable(population.get_schedules()[0])
+      OutManager.display_Restrictions(population.get_schedules()[0])
+      
   return population.get_schedules()[0]
     
 #Class para configuração de Output
