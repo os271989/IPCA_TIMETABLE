@@ -8,9 +8,10 @@ rnd = random.randrange
 
 POP_SIZE =15   #Nº de horários a considerar em cada população quanto > menor o desempenho
 ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
-MUTATION_RATE = 0.07   #Taxa de mutação a considerar
+MUTATION_RATE = 0.03   #Taxa de mutação a considerar
+CROSSOVER_RATE = 0.7   #Taxa de cruzamento dos cromossomas
 TOURNAMENT_SIZE = 3   #nº de horários a considerar para cada torneio
-MAX_GENERATIONS = 2000
+MAX_GENERATIONS = 5
 
 #Classe para importar dados da DB
 class DBGenerator:
@@ -169,10 +170,13 @@ class Course:
     self._id = id
     self._name = name
     self._abrev = abrev
+    self._freeDay = -1
   #Metodos para cada atributo
   def get_id(self): return self._id
   def get_name(self): return self._name
   def get_abrev(self): return self._abrev
+  def get_freeDay(self): return self._freeDay
+  def set_freeDay(self, value): self._freeDay = value
   def __str__(self): return self._name
   
 #Classe restrições horárias para instanciação
@@ -203,7 +207,7 @@ class ClassBlock:
   def set_room(self, room): self._room = room
   def __str__(self):
     #Converter e retornar para string todos os atributos do bloco de aula
-    return str(self._subject.get_abrev()) + ", " + str(self._room.get_abrev()) +  ", " + str(self._classTime.get_hour())
+    return str(self._subject.get_abrev()) + ", " + str(self._room.get_abrev()) +  ", " + str(self._classTime.get_block())
 
 #Classe para restrições possíveis de instanciar
 class Restriction:
@@ -243,6 +247,7 @@ class Schedule:
       self._fitness = self.fitness_calculation()
       self._fitnessChanged = False
     return self._fitness
+  
   #Atribuir todas as disciplinas
   def initClasses(self):
     subjects = dataMng.get_subjects()
@@ -286,7 +291,7 @@ class Schedule:
     return classTimes
   
   #Procurar se o curso tem algum dia livre
-  def verify_Course_FreeDay(self, courseClasses):
+  def verify_Course_FreeDay(self, courseClasses, course):
     #aux = ['BL12', 'BL15', 'BL21', 'BL23','BL24', 'BL35', 'BL42', 'BL43', 'BL33', 'BL14']
     weekDays = [11, 21, 31, 41, 51]   #1º bloco de cada dia da semana -> seg/sex
     aux = courseClasses
@@ -301,8 +306,12 @@ class Schedule:
         dayAux = int(aux[b][sliceObject])
         if(dayAux >= weekDays[d] and dayAux <= weekDays[d]+10): #Nunca mais de 10 blocos por dia pois os dias são de 10 em 10
           cont +=1
-      if (cont == 0): return True
-    return False
+      if (cont == 0): 
+        return d
+        #course.set_freeDay(d)
+        #return True
+    #return False
+    return -1
   
   #Verificar se cada curso apenas tem um máximo de 3 blocos diários    
   def verify_Hours_Day(sel, courseClasses):
@@ -365,17 +374,20 @@ class Schedule:
     #Testar se o curso tem algum dia livre
     for c in range(0,len(courses)):
       aux = self.get_Course_classTimes(courses[c])
-      if (self.verify_Course_FreeDay(aux) == False ):
+      free = self.verify_Course_FreeDay(aux, courses[c])
+      if (free  == -1 ):
         CourseFreeDay = list()
         CourseFreeDay.append(courses[c].get_abrev())
         self._restrictions.append(Restriction(Restriction.RestrictionType.COURSE_FREE_DAY, CourseFreeDay))
+        #Verificar se não tem mais de 3 blocos horários por dia
         restrictions = self.verify_Hours_Day(aux)
         if (len(restrictions) > 0):
           for r in range(0, len(restrictions)):
             self._restrictions.append(restrictions[r])
-        
+      else: courses[c].set_freeDay(free)  
     #Quanto mais restrições violadas menor a função fitness (aprox de 0), o ideal é serem 0 para devolver 1
     return 1 / (1.0 * len(self._restrictions) + 1)
+ 
   #Retornar todas as aulas atribuidas deste horário
   def __str__(self):
     value = ""
@@ -397,6 +409,7 @@ class GeneticAlg:
   
   #Envolver toda uma população para cruzamentos e mutações
   def evolve(self, pop): return self.population_Mutation(self.population_Crossover(pop))
+  
   #Cruzamento de todos os horários da população
   def population_Crossover(self, pop):
     pop_Cross = Population(0)
@@ -430,7 +443,7 @@ class GeneticAlg:
   def crossover_Schedules(sch1, sch2):
     schedule_Cross = Schedule().initClasses()
     for i in range(0, len(schedule_Cross.get_classes())):
-      if (random.random() > 0.5): schedule_Cross.get_classes()[i] = sch1.get_classes()[i]
+      if (random.random() > CROSSOVER_RATE): schedule_Cross.get_classes()[i] = sch1.get_classes()[i]
       else: schedule_Cross.get_classes()[i] = sch2.get_classes()[i]
     return schedule_Cross
 
@@ -587,6 +600,18 @@ class OutManager:
           teacherSchedule.append(str(schedule.get_classes()[c]))
       rows.append((teachers[t].get_id(), teachers[t].get_abrev(), str(teacherSchedule)))  
     print(tabulate(rows, headers=["Room_ID", "Teacher", "Time_Blocks"]))
+  
+  #Metodo para mostrar dia livre de cada curso
+  @staticmethod
+  def display_CourseFreeDay(schedule):
+    print("\n============= COURSES FREE DAY =============\n")
+    courses = dataMng.get_courses()
+    rows = []
+    days = ["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira"]
+    for c in range(0, len(courses)):
+      if (courses[c].get_freeDay() != -1):
+        rows.append((courses[c].get_id(), courses[c].get_name(), days[courses[c].get_freeDay()]))
+    print(tabulate(rows, headers=["Course_ID", "Name", "Free Day"]))
 
   #Metodo para mostrar gerações de população
   @staticmethod
@@ -610,7 +635,7 @@ class OutManager:
       rows.append((str(c +1), classes[c].get_subject().get_id() + " (" + classes[c].get_subject().get_name() + 
                   " )", classes[c].get_room().get_abrev(),
                   classes[c].get_teacher().get_id() + " (" + str(classes[c].get_teacher().get_abrev()) + ")",
-                  str(classes[c].get_classTime().get_block()) + " (" + classes[c].get_classTime().get_hour() + ")"))
+                  str(classes[c].get_classTime().get_block()) + " (" + classes[c].get_classTime().get_block() + ")"))
     print("\n========== Schedule_Table ==========\n")
     print(tabulate(rows, headers=("Class_ID", "Subject_ID", "Subject", "Teacher", "Time_Block\n" ), numalign="left"))
 
@@ -636,6 +661,7 @@ schedule = choose_fittestSolution()
 print("\nTeacher Perspective\n")
 OutManager.display_TeacherSchedule(schedule)
 OutManager.display_ScheduleTableClass(schedule)
+OutManager.display_CourseFreeDay(schedule)
 
     
     
