@@ -6,11 +6,11 @@ import random
 import re
 rnd = random.randrange
 
-POP_SIZE =20   #Nº de horários a considerar em cada população quanto > menor o desempenho
+POP_SIZE =15   #Nº de horários a considerar em cada população quanto > menor o desempenho
 ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
-MUTATION_RATE = 0.1   #Taxa de mutação a considerar
-TOURNAMENT_SIZE = 5   #nº de horários a considerar para cada torneio
-MAX_GENERATIONS = 1500
+MUTATION_RATE = 0.07   #Taxa de mutação a considerar
+TOURNAMENT_SIZE = 3   #nº de horários a considerar para cada torneio
+MAX_GENERATIONS = 2000
 
 #Classe para importar dados da DB
 class DBGenerator:
@@ -203,7 +203,7 @@ class ClassBlock:
   def set_room(self, room): self._room = room
   def __str__(self):
     #Converter e retornar para string todos os atributos do bloco de aula
-    return str(self._subject.get_id()) + "," + str(self._room.get_id()) + "," + str(self._teacher.get_id()) + "," + str(self._classTime.get_block())
+    return str(self._subject.get_abrev()) + ", " + str(self._room.get_abrev()) +  ", " + str(self._classTime.get_hour())
 
 #Classe para restrições possíveis de instanciar
 class Restriction:
@@ -233,6 +233,7 @@ class Schedule:
     self._classNbr = 0
     self._fitnessChanged = True
     
+  def get_classNbr(self): return self._classNbr
   def get_classes(self):
     self._fitnessChanged = True
     return self._classes
@@ -286,20 +287,22 @@ class Schedule:
   
   #Procurar se o curso tem algum dia livre
   def verify_Course_FreeDay(self, courseClasses):
-    #aux = ['BL02', 'BL05', 'BL11', 'BL13','BL14', 'BL16', 'BL22', 'BL23', 'BL24', 'BL25']
+    #aux = ['BL12', 'BL15', 'BL21', 'BL23','BL24', 'BL35', 'BL42', 'BL43', 'BL33', 'BL14']
+    weekDays = [11, 21, 31, 41, 51]   #1º bloco de cada dia da semana -> seg/sex
     aux = courseClasses
-    periods = dataMng.get_scheduleTimes()
-    aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])
-    for c in range(0, len(aux)):
-      i = 0
-      while (i < len(periods)):
-        #result = aux[c] != periods[i].get_block()
-        #result2 = aux[c] > periods[i+4].get_block()
-        if (aux[c] != periods[i].get_block() and aux[c] > periods[i+4].get_block()):
-          return True
-          #print("VIVA")
-        i +=5
-      return False
+    #weekDays.reverse()
+    aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])   #ordenar por ordem crescente
+    sliceObject = slice(2, 4 ,1)
+    dayAux = int(aux[0][sliceObject])
+    
+    for d in range(0, len(weekDays)):
+      cont = 0
+      for b in range(0, len(aux)):
+        dayAux = int(aux[b][sliceObject])
+        if(dayAux >= weekDays[d] and dayAux <= weekDays[d]+10): #Nunca mais de 10 blocos por dia pois os dias são de 10 em 10
+          cont +=1
+      if (cont == 0): return True
+    return False
   
   #Verificar se cada curso apenas tem um máximo de 3 blocos diários    
   def verify_Hours_Day(sel, courseClasses):
@@ -449,28 +452,21 @@ def choose_fittestSolution():
   population = Population(POP_SIZE)
   #Ordenar população por horários com menor fitness -> crescente
   population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
-
   #Mostrar geração, horário tabelado e restrições violadas
   OutManager.display_Gen(population)
-  OutManager.display_ScheduleTable(population.get_schedules()[0])
-  OutManager.display_Restrictions(population.get_schedules()[0])
   geneticAlg = GeneticAlg()
   
-  while (population.get_schedules()[0].get_fitness() != 1.0):
-    if(generationQty < MAX_GENERATIONS):
-      generationQty += 1
-      print("\n===== GENERATION " + str(generationQty) + " =====")
-      population = geneticAlg.evolve(population)
-      population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
-      OutManager.display_Gen(population)
-      OutManager.display_ScheduleTable(population.get_schedules()[0])
-      OutManager.display_Restrictions(population.get_schedules()[0])
- 
-    else: 
-      print("\n\n Best Solution found after " + str(generationQty) + " Generations\n")
-      OutManager.display_Gen(population)
-      OutManager.display_ScheduleTable(population.get_schedules()[0])
-      OutManager.display_Restrictions(population.get_schedules()[0])
+  while (generationQty < MAX_GENERATIONS and population.get_schedules()[0].get_fitness() != 1.0):
+    generationQty += 1
+    print("\n===== GENERATION " + str(generationQty) + " =====")
+    population = geneticAlg.evolve(population)
+    population.get_schedules().sort(key=lambda x: x.get_fitness(), reverse=True)
+    OutManager.display_Gen(population)
+    OutManager.display_Restrictions(population.get_schedules()[0])
+  
+  print("\n\n Best Solution found after " + str(generationQty) + " Generations\n")
+  OutManager.display_Gen(population)
+  OutManager.display_Restrictions(population.get_schedules()[0])
       
   return population.get_schedules()[0]
     
@@ -590,7 +586,7 @@ class OutManager:
         if (schedule.get_classes()[c].get_teacher() == teachers[t]):
           teacherSchedule.append(str(schedule.get_classes()[c]))
       rows.append((teachers[t].get_id(), teachers[t].get_abrev(), str(teacherSchedule)))  
-    print(tabulate(rows, headers=["Room_ID", "1", "2", "3", "4", "5"]))
+    print(tabulate(rows, headers=["Room_ID", "Teacher", "Time_Blocks"]))
 
   #Metodo para mostrar gerações de população
   @staticmethod
@@ -600,13 +596,14 @@ class OutManager:
     #Iterar cada horário da população
     for s in range(0, len(schedules)):
       #Adicionar nº horário, função fitness arre. a 3 casas, nº de restrições violadas e horário
-      rows.append((str(s+1), round(schedules[s].get_fitness(), 3), len(schedules[s].get_restrictions()), str("(" + schedules[s].__str__() + ")")))
+      rows.append((str(s+1), round(schedules[s].get_fitness(), 3), len(schedules[s].get_restrictions()), str(schedules[s].get_classNbr())))
+      ''' str("(" + schedules[s].__str__() + ")"))) '''
     print("\n\n ========== Schedule Table =========\n")
-    print(tabulate(rows, headers=("Shedule_Nbr".ljust(20), "Fitness".ljust(10), "Nbr_Restrictions_Violated".ljust(30), "ClassBlocks".ljust(500))))
+    print(tabulate(rows, headers=("Shedule_Nbr", "Fitness", "Nbr_Restrictions_Violated", "ClassBlocks")))
 
 #Metodo para mostrar horário tabelado
   @staticmethod
-  def display_ScheduleTable(schedule):
+  def display_ScheduleTableClass(schedule):
     classes = schedule.get_classes()
     rows = []
     for c in range(0, len(classes)):
@@ -638,6 +635,7 @@ OutManager.display_data_input()
 schedule = choose_fittestSolution()
 print("\nTeacher Perspective\n")
 OutManager.display_TeacherSchedule(schedule)
+OutManager.display_ScheduleTableClass(schedule)
 
     
     
