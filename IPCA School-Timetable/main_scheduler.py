@@ -10,8 +10,8 @@ POP_SIZE =15   #Nº de horários a considerar em cada população quanto > menor
 ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
 MUTATION_RATE = 0.03   #Taxa de mutação a considerar
 CROSSOVER_RATE = 0.7   #Taxa de cruzamento dos cromossomas
-TOURNAMENT_SIZE = 3   #nº de horários a considerar para cada torneio
-MAX_GENERATIONS = 5
+TOURNAMENT_SIZE = 3   #Nº de horários a considerar para cada torneio
+MAX_GENERATIONS = 3500  #Nº máximo de gerações a atingir
 
 #Classe para importar dados da DB
 class DBGenerator:
@@ -212,14 +212,14 @@ class ClassBlock:
 #Classe para restrições possíveis de instanciar
 class Restriction:
   class RestrictionType(Enum):
-    TEACHER_ASSIGNED = 1    #Professor com sobreposição de aulas
-    ROOM_OCCUPIED = 2       #Sala com sobreposição de aulas
-    TEACHER_RESTRICTION_TIME = 3  #Restrição de horário do professor violada
-    SUBJECT_TEACHERS_OVERLAP = 4  #Disciplina de um curso lecionada por mais de 1 professor
-    COURSE_FREE_DAY = 5     #Curso sem nenhum dia livre
-    TEACHER_FREE_DAY = 6    #Professor sem nenhum dia livre
-    SUBJECT_QUANTITY = 7    #Disciplina sem as 4h semanais atribuidas
-    DAY_OVERLOAD = 8    #Dia com mais de 3 blocos horários atribuídos
+    TEACHER_ASSIGNED = 15    #Professor com sobreposição de aulas
+    ROOM_OCCUPIED = 15       #Sala com sobreposição de aulas
+    TEACHER_RESTRICTION_TIME = 5  #Restrição de horário do professor violada
+    SUBJECT_TEACHERS_OVERLAP = 10  #Disciplina de um curso lecionada por mais de 1 professor
+    COURSE_FREE_DAY = 7.5     #Curso sem nenhum dia livre
+    TEACHER_FREE_DAY = 5    #Professor sem nenhum dia livre
+    SUBJECT_QUANTITY = 10    #Disciplina sem as 4h semanais atribuidas
+    DAY_OVERLOAD = 10    #Dia com mais de 3 blocos horários atribuídos
     #tipo de restrição e entre que aulas existe essa restrição
   def __init__(self, restrictionType, restrictionBetweenClass): 
     self._restrictionType = restrictionType
@@ -385,8 +385,14 @@ class Schedule:
           for r in range(0, len(restrictions)):
             self._restrictions.append(restrictions[r])
       else: courses[c].set_freeDay(free)  
+      
+      fitnessWeight = 0
+      for r in range(0, len(self._restrictions)):
+        fitnessWeight += self._restrictions[r].get_restrictionType().value
+        
     #Quanto mais restrições violadas menor a função fitness (aprox de 0), o ideal é serem 0 para devolver 1
-    return 1 / (1.0 * len(self._restrictions) + 1)
+    #return 1 / (1.0 * len(self._restrictions) + 1)
+    return 1 / (fitnessWeight + 1)
  
   #Retornar todas as aulas atribuidas deste horário
   def __str__(self):

@@ -118,14 +118,14 @@ cursor.execute("insert into room values "
                 "('103', 'Lab Internet of things', 'Lab IoT'),"
                 "('104', 'Lab Redes', 'Lab Redes'),"
                 "('105', 'Sala 4', 'Sala 4'),"
-                "('106', 'Sala A', 'Sala A'),"
-                "('107', 'Sala C', 'Sala C'),"
-                "('108', 'Sala E', 'Sala E'),"
-                "('109', 'Sala N', 'Sala N'),"
-                "('110', 'Sala T', 'Sala T'),"
-                "('111', 'Sala @', 'Sala @'),"
-                "('112', 'Lab Instrumentação Médica ', 'LAB IM')"
-                )
+                "('106', 'Sala A', 'Sala A')")
+''' "('107', 'Sala C', 'Sala C'),"
+"('108', 'Sala E', 'Sala E'),"
+"('109', 'Sala N', 'Sala N'),"
+"('110', 'Sala T', 'Sala T'),"
+"('111', 'Sala @', 'Sala @'),"
+"('112', 'Lab Instrumentação Médica ', 'LAB IM')"
+) '''
 
 #Criação da tabela aulas com o par disciplina/professor
 cursor.execute("""create table class_Teachers(subject_id text, id_tea text)""")
