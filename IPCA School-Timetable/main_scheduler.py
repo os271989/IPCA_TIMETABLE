@@ -6,9 +6,9 @@ import random
 import re
 rnd = random.randrange
 
-POP_SIZE =15   #Nº de horários a considerar em cada população quanto > menor o desempenho
+POP_SIZE =25   #Nº de horários a considerar em cada população quanto > menor o desempenho
 ELITE_NBR = 3   #Nº de horários "elite" ou seja que não serão considerados para mutação
-MUTATION_RATE = 0.03   #Taxa de mutação a considerar
+MUTATION_RATE = 0.02   #Taxa de mutação a considerar
 CROSSOVER_RATE = 0.7   #Taxa de cruzamento dos cromossomas
 TOURNAMENT_SIZE = 3   #Nº de horários a considerar para cada torneio
 MAX_GENERATIONS = 3500  #Nº máximo de gerações a atingir
@@ -220,6 +220,7 @@ class Restriction:
     TEACHER_FREE_DAY = 5    #Professor sem nenhum dia livre
     SUBJECT_QUANTITY = 10    #Disciplina sem as 4h semanais atribuidas
     DAY_OVERLOAD = 10    #Dia com mais de 3 blocos horários atribuídos
+    SUBJECT_DAY_ASSIGNED = 10  #Aula já atribuída nesse dia
     #tipo de restrição e entre que aulas existe essa restrição
   def __init__(self, restrictionType, restrictionBetweenClass): 
     self._restrictionType = restrictionType
@@ -281,7 +282,7 @@ class Schedule:
         classTimes.append(self._classes[s].get_classTime().get_block())
     return classTimes
     
-   #Devolver todas os blocos de aulas associados a um curso
+   #Devolver todas os blocos horários de aulas associados a um curso
   def get_Course_classTimes(self, course):
     classTimes = list()
     for s in range(0, len(self._classes)):
@@ -289,6 +290,15 @@ class Schedule:
       if(self._classes[s].get_subject().get_course() == course.get_id()):
         classTimes.append(self._classes[s].get_classTime().get_block())
     return classTimes
+  
+  #Devolver todas os blocos de aulas associados a um curso
+  def get_Course_classBlocks(self, course):
+    classes = list()
+    for s in range(0, len(self._classes)):
+      #Procurar em blocos horários os que estão associados ao ID do professor
+      if(self._classes[s].get_subject().get_course() == course.get_id()):
+        classes.append(self._classes[s])
+    return classes
   
   #Procurar se o curso tem algum dia livre
   def verify_Course_FreeDay(self, courseClasses, course):
@@ -298,7 +308,7 @@ class Schedule:
     #weekDays.reverse()
     aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])   #ordenar por ordem crescente
     sliceObject = slice(2, 4 ,1)
-    dayAux = int(aux[0][sliceObject])
+    dayAux = int(aux[0][sliceObject]) #Retirar apenas a parte numérica do bloco horário
     
     for d in range(0, len(weekDays)):
       cont = 0
@@ -328,7 +338,30 @@ class Schedule:
       if (blocks > 3):
         blockRestrictions.append(Restriction(Restriction.RestrictionType.DAY_OVERLOAD, aux[c]))    
     return blockRestrictions         
+   
+  #Procurar se o curso tem algum dia livre
+  def verify_Course_SubjectDay(self, courseClasses):
+    weekDays = [11, 21, 31, 41, 51]   #1º bloco de cada dia da semana -> seg/sex
+    aux = courseClasses
+    aux.sort(key=lambda x: x.get_classTime().get_block(), reverse=False)
+    #aux.sort(key=lambda aux : list(map(int, re.findall(r'\d+', aux)))[0])   #ordenar por ordem crescente
+    sliceObject = slice(2, 4 ,1)
+    dayAux = int(aux[0].get_classTime().get_block()[sliceObject]) #Retirar apenas a parte numérica do bloco horário
     
+    for d in range(0, len(weekDays)):
+      cont = 0
+      for b in range(0, len(aux)):
+        dayAux = int(aux[b].get_classTime().get_block()[sliceObject])
+        subAux = aux[d].get_subject().get_id()
+        if(dayAux >= weekDays[d] and dayAux <= weekDays[d]+10): #Nunca mais de 10 blocos por dia pois os dias são de 10 em 10
+          if(aux[b].get_subject().get_id() == subAux):
+            cont +=1
+      if (cont > 1): 
+        return aux[d].get_subject().get_abrev()
+        #course.set_freeDay(d)
+        #return True
+    #return False
+    return 0 
   #####################################################################
   #Calcular função Fitness
   def fitness_calculation(self):
@@ -338,7 +371,7 @@ class Schedule:
     courses = dataMng.get_courses()
     #--------------------------------------- TESTES DE RESTRIÇÕES ------------------------------------#
     for c in range(0, len(classes)):
-      #Testar se tem aulas consecutivas
+      #Testar se tem aulas em blocos indicados como indisponivel
       if (classes[c].get_classTime().get_block() in classes[c].get_teacher().get_restrictions()): 
         teacherTimeRestr = list()
         teacherTimeRestr.append(classes[c].get_classTime().get_name())       
@@ -384,11 +417,17 @@ class Schedule:
         if (len(restrictions) > 0):
           for r in range(0, len(restrictions)):
             self._restrictions.append(restrictions[r])
-      else: courses[c].set_freeDay(free)  
+      else: courses[c].set_freeDay(free)
       
+      #Verificar se há alguma disciplina atribuida mais do que uma vez no mesmo dia
+      subDay = self.verify_Course_SubjectDay(self.get_Course_classBlocks(courses[c]))
+      if (subDay != 0):
+        self._restrictions.append(Restriction(Restriction.RestrictionType.SUBJECT_DAY_ASSIGNED, subDay))
+      
+      #Cálculo de todos os pesos das restrições violadas neste horário 
       fitnessWeight = 0
-      for r in range(0, len(self._restrictions)):
-        fitnessWeight += self._restrictions[r].get_restrictionType().value
+    for r in range(0, len(self._restrictions)):
+      fitnessWeight += self._restrictions[r].get_restrictionType().value
         
     #Quanto mais restrições violadas menor a função fitness (aprox de 0), o ideal é serem 0 para devolver 1
     #return 1 / (1.0 * len(self._restrictions) + 1)
@@ -652,7 +691,7 @@ class OutManager:
     rows = []
     for r in range(0, len(restrictions)):
       rows.append((str(restrictions[r].get_restrictionType()), 
-                  str(" and ".join(map(str, restrictions[r].get_restrictionBetweenClass())))))
+                 str(" and ".join(map(str, restrictions[r].get_restrictionBetweenClass())))))
     if (len(restrictions) > 0): 
       print("\n========== Restrictions Table ==========\n")
       print("Restrições Violadas:")
