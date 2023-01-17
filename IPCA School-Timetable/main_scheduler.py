@@ -215,12 +215,12 @@ class Restriction:
     TEACHER_ASSIGNED = 15    #Professor com sobreposição de aulas
     ROOM_OCCUPIED = 15       #Sala com sobreposição de aulas
     TEACHER_RESTRICTION_TIME = 5  #Restrição de horário do professor violada
-    SUBJECT_TEACHERS_OVERLAP = 10  #Disciplina de um curso lecionada por mais de 1 professor
+    SUBJECT_TEACHERS_OVERLAP = 15  #Disciplina de um curso lecionada por mais de 1 professor
     COURSE_FREE_DAY = 7.5     #Curso sem nenhum dia livre
     TEACHER_FREE_DAY = 5    #Professor sem nenhum dia livre
-    SUBJECT_QUANTITY = 10    #Disciplina sem as 4h semanais atribuidas
-    DAY_OVERLOAD = 10    #Dia com mais de 3 blocos horários atribuídos
-    SUBJECT_DAY_ASSIGNED = 10  #Aula já atribuída nesse dia
+    SUBJECT_QUANTITY = 15    #Disciplina sem as 4h semanais atribuidas
+    DAY_OVERLOAD = 15    #Dia com mais de 3 blocos horários atribuídos
+    SUBJECT_DAY_ASSIGNED = 15  #Aula já atribuída nesse dia
     #tipo de restrição e entre que aulas existe essa restrição
   def __init__(self, restrictionType, restrictionBetweenClass): 
     self._restrictionType = restrictionType
